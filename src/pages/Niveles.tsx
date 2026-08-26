@@ -1,6 +1,8 @@
 import { Link, useLoaderData } from 'react-router-dom'
 import type { Level } from '../objects'
 
+void Link
+
 export async function loader() {
   const storedUser = localStorage.getItem('aredl_user')
   const headers: Record<string, string> = {}

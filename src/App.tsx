@@ -76,6 +76,9 @@ function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
 
+  void login
+  void navigate
+
   if (window.location.pathname === '/auth/callback') {
     return null
   }
