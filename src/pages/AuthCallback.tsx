@@ -1,27 +1,29 @@
-import { useEffect } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 
 const AREDL_API_BASE = 'https://api.aredl.net/v2'
 
 export function AuthCallback() {
-  const [searchParams] = useSearchParams()
-  const navigate = useNavigate()
   const { setUser } = useAuth()
+  const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading')
+  const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
     const handleCallback = async () => {
-      const code = searchParams.get('code')
-      const error = searchParams.get('error')
+      const params = new URLSearchParams(window.location.search)
+      const code = params.get('code')
+      const error = params.get('error')
 
       if (error) {
         console.error('Auth error:', error)
-        navigate('/login?error=auth_failed')
+        setStatus('error')
+        setErrorMessage(`Error de autenticación: ${error}`)
         return
       }
 
       if (!code) {
-        navigate('/login?error=no_code')
+        setStatus('error')
+        setErrorMessage('No se recibió código de autorización')
         return
       }
 
@@ -43,24 +45,51 @@ export function AuthCallback() {
         
         if (data.user) {
           setUser(data.user)
-          navigate('/niveles')
+          setStatus('success')
         } else {
           throw new Error('No user data received')
         }
       } catch (err) {
         console.error('Callback error:', err)
-        navigate('/login?error=callback_failed')
+        setStatus('error')
+        setErrorMessage(err instanceof Error ? err.message : 'Error en el callback')
       }
     }
 
     handleCallback()
-  }, [searchParams, navigate, setUser])
+  }, [setUser])
+
+  if (status === 'loading') {
+    return (
+      <div style={{ padding: '2rem', maxWidth: '400px', margin: '4rem auto', textAlign: 'center' }}>
+        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⏳</div>
+        <h1>Completando inicio de sesión...</h1>
+        <p style={{ color: '#666' }}>Por favor espera mientras te conectamos</p>
+      </div>
+    )
+  }
+
+  if (status === 'error') {
+    return (
+      <div style={{ padding: '2rem', maxWidth: '400px', margin: '4rem auto', textAlign: 'center' }}>
+        <div style={{ fontSize: '3rem', marginBottom: '1rem', color: '#ff6b6b' }}>✗</div>
+        <h1>Error al iniciar sesión</h1>
+        <p style={{ color: '#666' }}>{errorMessage}</p>
+        <button 
+          onClick={() => window.location.href = '/'}
+          style={{ marginTop: '1rem', padding: '0.5rem 1rem', background: '#5865F2', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+        >
+          Volver al inicio
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div style={{ padding: '2rem', maxWidth: '400px', margin: '4rem auto', textAlign: 'center' }}>
-      <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⏳</div>
-      <h1>Completando inicio de sesión...</h1>
-      <p style={{ color: '#666' }}>Por favor espera mientras te conectamos</p>
+      <div style={{ fontSize: '3rem', marginBottom: '1rem', color: '#4ade80' }}>✓</div>
+      <h1>¡Inicio de sesión exitoso!</h1>
+      <p style={{ color: '#666' }}>Redirigiendo...</p>
     </div>
   )
 }

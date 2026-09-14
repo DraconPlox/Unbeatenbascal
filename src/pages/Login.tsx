@@ -1,12 +1,9 @@
-import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 export function Login() {
   const { login, user, isLoading } = useAuth()
-  const navigate = useNavigate()
 
   if (user && !isLoading) {
-    navigate('/niveles')
     return null
   }
 
@@ -43,9 +40,6 @@ export function Login() {
       <p style={{ marginTop: '1.5rem', fontSize: '0.875rem', color: '#888' }}>
         Serás redirigido a Discord para autorizar la aplicación
       </p>
-      <Link to="/" style={{ display: 'inline-block', marginTop: '1rem', color: '#5865F2' }}>
-        ← Volver al inicio
-      </Link>
     </div>
   )
 }

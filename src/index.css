@@ -91,10 +91,14 @@
     gap: 0.75rem;
     padding: 0.75rem 1rem;
     color: var(--color-dark-text-muted);
-    text-decoration: none;
     border-radius: 8px;
     transition: all 0.2s ease;
     font-size: 0.9375rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
   }
 
   .nav-link:hover {
@@ -102,9 +106,16 @@
     color: white;
   }
 
-  .nav-link.active {
-    background-color: var(--color-dark-primary);
-    color: white;
+  .nav-link:focus {
+    outline: none;
+    ring: 2px;
+    ring-color: var(--color-dark-primary);
+  }
+
+  .sidebar-login {
+    margin-top: auto;
+    padding-top: 1rem;
+    border-top: 1px solid var(--color-dark-border);
   }
 
   .nav-link svg {

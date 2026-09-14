@@ -1,9 +1,7 @@
-import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
-export function ProtectedRoute() {
+export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth()
-  const location = useLocation()
 
   if (isLoading) {
     return (
@@ -15,8 +13,12 @@ export function ProtectedRoute() {
   }
 
   if (!user) {
-    return <Navigate to="/login" state={{ from: location }} replace />
+    return (
+      <div style={{ padding: '2rem', textAlign: 'center' }}>
+        <p>Debes iniciar sesión para ver esta sección</p>
+      </div>
+    )
   }
 
-  return <Outlet />
+  return <>{children}</>
 }
