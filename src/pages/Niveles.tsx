@@ -271,16 +271,6 @@ export function Niveles() {
                     {lbl}
                   </label>
                 ))}
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#d1d5db', fontSize: '0.875rem', cursor: 'pointer' }}>
-                  <input
-                    type="radio"
-                    name="sort"
-                    checked={sortType === 'none'}
-                    onChange={() => setSortType('none')}
-                    style={{ accentColor: '#5865F2' }}
-                  />
-                  Sin ordenar
-                </label>
               </div>
 
               {sortType !== 'none' && (
