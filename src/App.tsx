@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Index } from './pages/Index'
 import { Niveles } from './pages/Niveles'
 import { AuthProvider } from './context/AuthContext'
@@ -28,6 +28,21 @@ const navItems: { id: View; label: string; icon: React.ReactNode }[] = [
 
 function Layout() {
   const [activeView, setActiveView] = useState<View>('home')
+  // En ventanas pequeñas el menú arranca comprimido para dejar sitio al contenido.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth <= 1024,
+  )
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 1024px)')
+    // Al encoger la ventana se comprime solo; al agrandarla no se fuerza,
+    // así el usuario decide cuándo expandirlo.
+    const handleChange = (event: MediaQueryListEvent) => {
+      if (event.matches) setSidebarCollapsed(true)
+    }
+    mediaQuery.addEventListener('change', handleChange)
+    return () => mediaQuery.removeEventListener('change', handleChange)
+  }, [])
 
   const renderView = () => {
     switch (activeView) {
@@ -41,29 +56,36 @@ function Layout() {
   }
 
   return (
-    <div className="app-layout">
+    <div className={`app-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
       <aside className="app-sidebar">
-        <div className="sidebar-title" style={{ color: 'black' }}>UnbeatenBascal</div>
+        <div className="sidebar-head">
+          <div className="sidebar-title" style={{ color: 'black' }}>UnbeatenBascal</div>
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={() => setSidebarCollapsed(value => !value)}
+            aria-label={sidebarCollapsed ? 'Expandir menú' : 'Comprimir menú'}
+            title={sidebarCollapsed ? 'Expandir menú' : 'Comprimir menú'}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18" aria-hidden="true">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
+        </div>
         <nav className="sidebar-nav">
           {navItems.map((item) => (
             <button
               key={item.id}
               onClick={() => setActiveView(item.id)}
               className="nav-link"
+              title={item.label}
               style={activeView === item.id ? { backgroundColor: 'var(--color-dark-primary)', color: 'white', fontWeight: 600, boxShadow: '0 2px 8px rgba(88, 101, 242, 0.4)' } : {}}
             >
               {item.icon}
-              {item.label}
+              <span className="nav-label">{item.label}</span>
             </button>
           ))}
         </nav>
-        {/* 
-        <div className="sidebar-login">
-          <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
-            Login
-          </button>
-        </div>
-        */}
       </aside>
 
       <main className="app-main">

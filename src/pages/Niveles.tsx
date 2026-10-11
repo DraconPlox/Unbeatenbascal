@@ -64,7 +64,6 @@ const formatEdelEnjoyment = (value: number | null | undefined) => {
 }
 const formatGDDLTier = (value: number | null | undefined) => value !== null && value !== undefined ? Math.ceil(value).toString() : 'N/A'
 
-const cardStyle = { border: '1px solid #ccc', borderRadius: '8px', padding: '1rem', background: '#fafafa', color: '#111827' }
 const labelStyle = { fontWeight: 600, color: '#374151' }
 
 type SortType = 'aredl' | 'edel' | 'none'
@@ -129,6 +128,7 @@ export function Niveles() {
   const [platformerError, setPlatformerError] = useState<string | null>(null)
   const [mode, setMode] = useState<Mode>('classic')
   const [listType, setListType] = useState<ListType>('main')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const [searchQuery, setSearchQuery] = useState('')
   const [sortType, setSortType] = useState<SortType>('aredl')
@@ -217,6 +217,13 @@ export function Niveles() {
     return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b))
   }, [filtered, groupByNlw])
 
+  // Nivel mostrado en el panel de detalle. Si el seleccionado no está en la
+  // lista filtrada (por cambio de modo, filtro, etc.) se muestra el primero.
+  const selected = useMemo(
+    () => filtered.find(l => l.id === selectedId) ?? filtered[0] ?? null,
+    [filtered, selectedId],
+  )
+
   const toggleNlwTier = (tier: string) => {
     setSelectedNlwTiers(prev => {
       const next = new Set(prev)
@@ -226,22 +233,101 @@ export function Niveles() {
     })
   }
 
-  const renderCard = (level: Level) => (
-    <div key={level.id} style={cardStyle}>
-      <p><span style={labelStyle}>Posición:</span> #{level.position}</p>
-      <p><span style={labelStyle}>Nombre:</span> {level.name}</p>
-      <p><span style={labelStyle}>Puntos:</span> {formatPoints(level.points)}</p>
-      <p><span style={labelStyle}>Level ID:</span> {level.level_id}</p>
-      <p><span style={labelStyle}>Two Player:</span> {level.two_player ? 'Sí' : 'No'}</p>
-      <p><span style={labelStyle}>Tags:</span> {level.tags.join(', ')}</p>
-      <p><span style={labelStyle}>Descripción:</span> {level.description}</p>
-      <p><span style={labelStyle}>Canción:</span> {level.song ?? 'N/A'}</p>
-      <p><span style={labelStyle}>Edel Enjoyment:</span> {formatEdelEnjoyment(level.edel_enjoyment)}</p>
-      <p><span style={labelStyle}>GDDL Tier:</span> {formatGDDLTier(level.gddl_tier)}</p>
-      <p><span style={labelStyle}>NLW Tier:</span> {level.nlw_tier ?? 'N/A'}</p>
-      <p><span style={labelStyle}>Completed by User:</span> {level.completed_by_user ? 'Sí' : level.completed_by_user === false ? 'No' : 'N/A'}</p>
+  const clearFilters = () => {
+    setSelectedNlwTiers(new Set())
+    setPosMin('')
+    setPosMax('')
+    setEdelMin('')
+    setEdelMax('')
+    setGddlMin('')
+    setGddlMax('')
+    setGroupByNlw(false)
+    setSortType('aredl')
+    setSortDir('asc')
+  }
+
+  // Los récords (jugadores que se han pasado el nivel) todavía NO se cargan:
+  // se dejan vacíos a propósito. Cuando toque, se pueden pedir a
+  //   /api/aredl/levels/{level_id}/records  (clásico)
+  //   /api/arepl/levels/{level_id}/records  (plataforma)
+  const records: { player: string; time: string }[] = []
+
+  const renderStat = (label: string, value: string) => (
+    <div className="demonlist-stat">
+      <div className="demonlist-stat-label">{label}</div>
+      <div className="demonlist-stat-value">{value}</div>
     </div>
   )
+
+  const renderRow = (level: Level) => (
+    <button
+      key={level.id}
+      type="button"
+      onClick={() => setSelectedId(level.id)}
+      className={`demonlist-row${selected?.id === level.id ? ' is-selected' : ''}`}
+    >
+      <span className="demonlist-row-pos">#{level.position}</span>
+      <span className="demonlist-row-name">{level.name}</span>
+      <span className="demonlist-row-points">{formatPoints(level.points)}</span>
+    </button>
+  )
+
+  const renderDetail = (level: Level) => {
+    const tags = level.tags.filter((tag): tag is string => Boolean(tag))
+
+    return (
+      <div className="demonlist-detail">
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.6rem' }}>
+          <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#c084fc' }}>#{level.position}</span>
+          <h2 style={{ margin: 0, fontSize: '1.5rem' }}>{level.name}</h2>
+        </div>
+        <p style={{ color: 'var(--color-dark-text-muted)', fontSize: '0.85rem', margin: '0.25rem 0 1rem' }}>
+          Level ID: {level.level_id}
+        </p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem' }}>
+          {renderStat('Puntos', formatPoints(level.points))}
+          {renderStat('Edel Enjoyment', formatEdelEnjoyment(level.edel_enjoyment))}
+          {renderStat('GDDL Tier', formatGDDLTier(level.gddl_tier))}
+          {renderStat('NLW Tier', level.nlw_tier ?? 'N/A')}
+          {renderStat('Two Player', level.two_player ? 'Sí' : 'No')}
+          {renderStat('Canción', level.song !== null ? String(level.song) : 'N/A')}
+          {renderStat('Completed by User', level.completed_by_user ? 'Sí' : level.completed_by_user === false ? 'No' : 'N/A')}
+        </div>
+
+        {tags.length > 0 && (
+          <div style={{ marginTop: '1rem' }}>
+            <div className="demonlist-stat-label" style={{ marginBottom: '0.4rem' }}>Tags</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+              {tags.map(tag => (
+                <span key={tag} className="demonlist-tag">{tag}</span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{ marginTop: '1rem' }}>
+          <div className="demonlist-stat-label" style={{ marginBottom: '0.25rem' }}>Descripción</div>
+          <p style={{ margin: 0, fontSize: '0.9rem' }}>{level.description || 'N/A'}</p>
+        </div>
+
+        <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid var(--color-dark-border)' }}>
+          <h3 style={{ margin: '0 0 0.5rem', fontSize: '1rem' }}>Récords ({records.length})</h3>
+          {records.length === 0 ? (
+            <p style={{ margin: 0, color: 'var(--color-dark-text-muted)', fontSize: '0.85rem' }}>
+              Sin récords todavía.
+            </p>
+          ) : (
+            <ul style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.9rem' }}>
+              {records.map((record, index) => (
+                <li key={index}>{record.player} — {record.time}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   const sortOptions: { value: SortType; label: string }[] = [
     { value: 'aredl', label: isPlatformer ? 'Rank' : 'AREDL Rank' },
@@ -250,7 +336,7 @@ export function Niveles() {
 
   if (loading) {
     return (
-      <div style={{ padding: '2rem', textAlign: 'center' }}>
+      <div style={{ textAlign: 'center', paddingTop: '2rem' }}>
         <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⏳</div>
         <p>Cargando niveles...</p>
         <p>Si tarda, comprueba tu conexión a Internet o la página de la AREDL.</p>
@@ -259,64 +345,74 @@ export function Niveles() {
   }
 
   return (
-    <div style={{ padding: '2rem' }}>
-      <h1>Demonlist</h1>
+    <div className="demonlist-page">
+      <h1 style={{ margin: '0 0 0.5rem' }}>Demonlist</h1>
 
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
         <button
           onClick={() => setMode('classic')}
           style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', border: '1px solid #5865F2', background: mode === 'classic' ? '#5865F2' : 'transparent', color: mode === 'classic' ? 'white' : '#c084fc', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 700 }}
         >
-          Clásico ({mainLevels.length + pendingLevels.length})
+          Clásico
         </button>
         <button
           onClick={() => setMode('platformer')}
           style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', border: '1px solid #5865F2', background: mode === 'platformer' ? '#5865F2' : 'transparent', color: mode === 'platformer' ? 'white' : '#c084fc', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 700 }}
         >
-          Plataforma ({platformerLevels.length})
+          Plataforma
         </button>
       </div>
 
       {activeError ? (
-        <div style={{ padding: '2rem', textAlign: 'center', color: '#ff6b6b' }}>
+        <div style={{ padding: '1rem 0', textAlign: 'center', color: '#ff6b6b' }}>
           <p>Error: {activeError}</p>
         </div>
       ) : (
         <>
           {mode === 'classic' && (
-            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
               <button
                 onClick={() => setListType('main')}
                 style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', border: '1px solid #5865F2', background: listType === 'main' ? '#5865F2' : 'transparent', color: listType === 'main' ? 'white' : '#c084fc', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600 }}
               >
-                Principales ({mainLevels.length})
+                Principales
               </button>
               <button
                 onClick={() => setListType('pending')}
                 style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', border: '1px solid #5865F2', background: listType === 'pending' ? '#5865F2' : 'transparent', color: listType === 'pending' ? 'white' : '#c084fc', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600 }}
               >
-                Pending ({pendingLevels.length})
+                Pending
               </button>
             </div>
           )}
 
-          <input
-            type="text"
-            placeholder='Buscar nivel... (^empieza | acaba$)'
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            style={{ width: '100%', padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid #d1d5db', background: 'white', color: '#111827', fontSize: '0.95rem', marginBottom: '1rem', boxSizing: 'border-box' }}
-          />
-
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            style={{ padding: '0.5rem 1rem', borderRadius: '6px', border: '1px solid #374151', background: showFilters ? '#5865F2' : '#374151', color: 'white', cursor: 'pointer', marginBottom: '1rem', fontSize: '0.875rem' }}
-          >
-            {showFilters ? 'Ocultar filtros' : 'Mostrar filtros'}
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', alignItems: 'stretch' }}>
+            <input
+              type="text"
+              placeholder='Buscar nivel... (^empieza | acaba$)'
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              style={{ flex: 1, minWidth: 0, padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid #d1d5db', background: 'white', color: '#111827', fontSize: '0.95rem', boxSizing: 'border-box' }}
+            />
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              style={{ padding: '0.5rem 1rem', borderRadius: '6px', border: '1px solid #374151', background: showFilters ? '#5865F2' : '#374151', color: 'white', cursor: 'pointer', fontSize: '0.875rem', whiteSpace: 'nowrap' }}
+            >
+              {showFilters ? 'Ocultar filtros' : 'Mostrar filtros'}
+            </button>
+          </div>
 
           {showFilters && (
             <div style={{ background: '#1f2937', border: '1px solid #374151', borderRadius: '8px', padding: '1.5rem', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#d1d5db' }}>Filtros</span>
+                <button
+                  onClick={clearFilters}
+                  style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', border: '1px solid #6b7280', background: 'transparent', color: '#d1d5db', cursor: 'pointer', fontSize: '0.8rem' }}
+                >
+                  Limpiar
+                </button>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem' }}>
 
                 <div style={sectionStyle}>
@@ -420,26 +516,29 @@ export function Niveles() {
             </div>
           )}
 
-          <div style={{ display: 'grid', gap: '1rem', maxWidth: '800px' }}>
+        </>
+      )}
+
+      {!activeError && (
+        <div className="demonlist-layout">
+          <div className="demonlist-list">
             {grouped ? (
               grouped.map(([tier, tierLevels]) => (
                 <div key={tier}>
-                  <h2 style={{ color: '#c084fc', fontSize: '1.1rem', marginBottom: '0.5rem', borderBottom: '1px solid #374151', paddingBottom: '0.25rem' }}>
-                    {tier} ({tierLevels.length})
-                  </h2>
-                  <div style={{ display: 'grid', gap: '1rem' }}>
-                    {tierLevels.map(renderCard)}
-                  </div>
+                  <div className="demonlist-group">{tier} ({tierLevels.length})</div>
+                  {tierLevels.map(renderRow)}
                 </div>
               ))
             ) : (
-              filtered.map(renderCard)
+              filtered.map(renderRow)
             )}
             {filtered.length === 0 && (
               <p style={{ color: '#9ca3af', textAlign: 'center', padding: '2rem' }}>No se encontraron niveles</p>
             )}
           </div>
-        </>
+
+          {selected && renderDetail(selected)}
+        </div>
       )}
     </div>
   )
