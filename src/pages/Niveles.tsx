@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Level } from '../objects'
 
-export async function fetchLevels(excludePending: boolean) {
+function aredlAuthHeaders(): Record<string, string> {
   const storedUser = localStorage.getItem('aredl_user')
   const headers: Record<string, string> = {}
-  
+
   if (storedUser) {
     try {
       const user = JSON.parse(storedUser)
@@ -16,17 +16,40 @@ export async function fetchLevels(excludePending: boolean) {
     }
   }
 
+  return headers
+}
+
+export async function fetchLevels(excludePending: boolean) {
   const params = new URLSearchParams({
     exclude_legacy: 'true',
     exclude_pending: excludePending.toString(),
     exclude_removed: 'true',
   })
-  
+
   const response = await fetch(`https://api.aredl.net/v2/api/aredl/levels?${params}`, {
-    headers,
+    headers: aredlAuthHeaders(),
   })
   if (!response.ok) {
     throw new Error('Failed to fetch levels')
+  }
+  return response.json() as Promise<Level[]>
+}
+
+// Los niveles de plataforma viven en el endpoint AREPL de la AREDL.
+// Gracias a exclude_legacy=true se descartan dinamicamente los que ya no son
+// extreme demons, sin tener que hardcodear la cantidad de niveles.
+export async function fetchPlatformerLevels() {
+  const params = new URLSearchParams({
+    exclude_legacy: 'true',
+    exclude_pending: 'true',
+    exclude_removed: 'true',
+  })
+
+  const response = await fetch(`https://api.aredl.net/v2/api/arepl/levels?${params}`, {
+    headers: aredlAuthHeaders(),
+  })
+  if (!response.ok) {
+    throw new Error('Failed to fetch platformer levels')
   }
   return response.json() as Promise<Level[]>
 }
@@ -47,6 +70,7 @@ const labelStyle = { fontWeight: 600, color: '#374151' }
 type SortType = 'aredl' | 'edel' | 'none'
 type SortDir = 'asc' | 'desc'
 type ListType = 'main' | 'pending'
+type Mode = 'classic' | 'platformer'
 
 const inputStyle: React.CSSProperties = {
   padding: '0.4rem 0.6rem',
@@ -99,8 +123,11 @@ const sortLevels = (levels: Level[], sortType: SortType, sortDir: SortDir): Leve
 export function Niveles() {
   const [mainLevels, setMainLevels] = useState<Level[]>([])
   const [pendingLevels, setPendingLevels] = useState<Level[]>([])
+  const [platformerLevels, setPlatformerLevels] = useState<Level[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [platformerError, setPlatformerError] = useState<string | null>(null)
+  const [mode, setMode] = useState<Mode>('classic')
   const [listType, setListType] = useState<ListType>('main')
 
   const [searchQuery, setSearchQuery] = useState('')
@@ -118,25 +145,44 @@ export function Niveles() {
 
   useEffect(() => {
     const loadLevels = async () => {
-      try {
-        setLoading(true)
-        const [main, pending] = await Promise.all([
-          fetchLevels(true),
-          fetchLevels(false),
-        ])
-        setMainLevels(main)
-        setPendingLevels(pending.filter(l => l.status.toLowerCase() === 'pending'))
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error desconocido')
-      } finally {
-        setLoading(false)
+      setLoading(true)
+      const [classic, platformer] = await Promise.allSettled([
+        (async () => {
+          const [main, pending] = await Promise.all([
+            fetchLevels(true),
+            fetchLevels(false),
+          ])
+          return { main, pending: pending.filter(l => l.status.toLowerCase() === 'pending') }
+        })(),
+        fetchPlatformerLevels(),
+      ])
+
+      if (classic.status === 'fulfilled') {
+        setMainLevels(classic.value.main)
+        setPendingLevels(classic.value.pending)
+        setError(null)
+      } else {
+        setError(classic.reason instanceof Error ? classic.reason.message : 'Error desconocido')
       }
+
+      if (platformer.status === 'fulfilled') {
+        setPlatformerLevels(platformer.value)
+        setPlatformerError(null)
+      } else {
+        setPlatformerError(platformer.reason instanceof Error ? platformer.reason.message : 'Error desconocido')
+      }
+
+      setLoading(false)
     }
     loadLevels()
   }, [])
 
-  const activeLevels = listType === 'main' ? mainLevels : pendingLevels
+  const activeLevels = mode === 'platformer'
+    ? platformerLevels
+    : listType === 'main' ? mainLevels : pendingLevels
 
+  const activeError = mode === 'platformer' ? platformerError : error
+  const isPlatformer = mode === 'platformer'
   const uniqueNlwTiers = useMemo(() => {
     const tiers = new Set<string>()
     activeLevels.forEach(l => { if (l.nlw_tier) tiers.add(l.nlw_tier) })
@@ -197,20 +243,17 @@ export function Niveles() {
     </div>
   )
 
+  const sortOptions: { value: SortType; label: string }[] = [
+    { value: 'aredl', label: isPlatformer ? 'Rank' : 'AREDL Rank' },
+    { value: 'edel', label: 'EDEL Enjoyment' },
+  ]
+
   if (loading) {
     return (
       <div style={{ padding: '2rem', textAlign: 'center' }}>
         <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⏳</div>
         <p>Cargando niveles...</p>
-        <p>Si tarda, comprueba tu conexión a Internet o la pagina de la AREDL.</p>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div style={{ padding: '2rem', textAlign: 'center', color: '#ff6b6b' }}>
-        <p>Error: {error}</p>
+        <p>Si tarda, comprueba tu conexión a Internet o la página de la AREDL.</p>
       </div>
     )
   }
@@ -221,161 +264,183 @@ export function Niveles() {
 
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
         <button
-          onClick={() => setListType('main')}
-          style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', border: '1px solid #5865F2', background: listType === 'main' ? '#5865F2' : 'transparent', color: listType === 'main' ? 'white' : '#c084fc', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600 }}
+          onClick={() => setMode('classic')}
+          style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', border: '1px solid #5865F2', background: mode === 'classic' ? '#5865F2' : 'transparent', color: mode === 'classic' ? 'white' : '#c084fc', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 700 }}
         >
-          Principales ({mainLevels.length})
+          Clásico ({mainLevels.length + pendingLevels.length})
         </button>
         <button
-          onClick={() => setListType('pending')}
-          style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', border: '1px solid #5865F2', background: listType === 'pending' ? '#5865F2' : 'transparent', color: listType === 'pending' ? 'white' : '#c084fc', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600 }}
+          onClick={() => setMode('platformer')}
+          style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', border: '1px solid #5865F2', background: mode === 'platformer' ? '#5865F2' : 'transparent', color: mode === 'platformer' ? 'white' : '#c084fc', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 700 }}
         >
-          Pending ({pendingLevels.length})
+          Plataforma ({platformerLevels.length})
         </button>
       </div>
 
-      <input
-        type="text"
-        placeholder='Buscar nivel... (^empieza | acaba$)'
-        value={searchQuery}
-        onChange={e => setSearchQuery(e.target.value)}
-        style={{ width: '100%', padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid #d1d5db', background: 'white', color: '#111827', fontSize: '0.95rem', marginBottom: '1rem', boxSizing: 'border-box' }}
-      />
-
-      <button
-        onClick={() => setShowFilters(!showFilters)}
-        style={{ padding: '0.5rem 1rem', borderRadius: '6px', border: '1px solid #374151', background: showFilters ? '#5865F2' : '#374151', color: 'white', cursor: 'pointer', marginBottom: '1rem', fontSize: '0.875rem' }}
-      >
-        {showFilters ? 'Ocultar filtros' : 'Mostrar filtros'}
-      </button>
-
-      {showFilters && (
-        <div style={{ background: '#1f2937', border: '1px solid #374151', borderRadius: '8px', padding: '1.5rem', marginBottom: '1rem' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem' }}>
-
-            <div style={sectionStyle}>
-              <span style={sectionLabelStyle}>Ordenar por</span>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                {([
-                  ['aredl', 'AREDL Rank'],
-                  ['edel', 'EDEL Enjoyment'],
-                ] as const).map(([val, lbl]) => (
-                  <label key={val} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#d1d5db', fontSize: '0.875rem', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="sort"
-                      checked={sortType === val}
-                      onChange={() => { setSortType(val); setSortDir('asc') }}
-                      style={{ accentColor: '#5865F2' }}
-                    />
-                    {lbl}
-                  </label>
-                ))}
-              </div>
-
-              {sortType !== 'none' && (
-                <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem' }}>
-                  <button
-                    onClick={() => setSortDir('asc')}
-                    style={{ padding: '0.3rem 0.7rem', borderRadius: '4px', border: '1px solid #5865F2', background: sortDir === 'asc' ? '#5865F2' : 'transparent', color: sortDir === 'asc' ? 'white' : '#5865F2', cursor: 'pointer', fontSize: '0.8rem' }}
-                  >
-                    ↑ Asc
-                  </button>
-                  <button
-                    onClick={() => setSortDir('desc')}
-                    style={{ padding: '0.3rem 0.7rem', borderRadius: '4px', border: '1px solid #5865F2', background: sortDir === 'desc' ? '#5865F2' : 'transparent', color: sortDir === 'desc' ? 'white' : '#5865F2', cursor: 'pointer', fontSize: '0.8rem' }}
-                  >
-                    ↓ Desc
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <div style={sectionStyle}>
-              <span style={sectionLabelStyle}>Agrupar</span>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#d1d5db', fontSize: '0.875rem', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={groupByNlw}
-                  onChange={e => setGroupByNlw(e.target.checked)}
-                  style={{ accentColor: '#5865F2' }}
-                />
-                Group by NLW tiers
-              </label>
-            </div>
-
-            <div style={sectionStyle}>
-              <span style={sectionLabelStyle}>NLW Tiers</span>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                {uniqueNlwTiers.map(tier => (
-                  <label key={tier} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: '#d1d5db', fontSize: '0.8rem', cursor: 'pointer', background: selectedNlwTiers.has(tier) ? '#5865F2' : '#2e303a', padding: '0.25rem 0.5rem', borderRadius: '4px' }}>
-                    <input
-                      type="checkbox"
-                      checked={selectedNlwTiers.has(tier)}
-                      onChange={() => toggleNlwTier(tier)}
-                      style={{ accentColor: '#5865F2' }}
-                    />
-                    {tier}
-                  </label>
-                ))}
-                {uniqueNlwTiers.length === 0 && <span style={{ color: '#6b7280', fontSize: '0.8rem' }}>No hay tiers</span>}
-              </div>
-            </div>
-
-            <div style={sectionStyle}>
-              <span style={sectionLabelStyle}>Posición</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#d1d5db', fontSize: '0.875rem' }}>
-                <input type="number" placeholder="Min" value={posMin} onChange={e => setPosMin(e.target.value)} style={inputStyle} />
-                <span>—</span>
-                <input type="number" placeholder="Max" value={posMax} onChange={e => setPosMax(e.target.value)} style={inputStyle} />
-              </div>
-            </div>
-
-            <div style={sectionStyle}>
-              <span style={sectionLabelStyle}>EDEL Enjoyment</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#d1d5db', fontSize: '0.875rem' }}>
-                <input type="number" step="0.1" placeholder="Min" value={edelMin} onChange={e => setEdelMin(e.target.value)} style={inputStyle} />
-                <span>—</span>
-                <input type="number" step="0.1" placeholder="Max" value={edelMax} onChange={e => setEdelMax(e.target.value)} style={inputStyle} />
-              </div>
-            </div>
-
-            <div style={sectionStyle}>
-              <span style={sectionLabelStyle}>GDDL Tier</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#d1d5db', fontSize: '0.875rem' }}>
-                <input type="number" placeholder="Min" value={gddlMin} onChange={e => setGddlMin(e.target.value)} style={inputStyle} />
-                <span>—</span>
-                <input type="number" placeholder="Max" value={gddlMax} onChange={e => setGddlMax(e.target.value)} style={inputStyle} />
-              </div>
-            </div>
-
-          </div>
+      {activeError ? (
+        <div style={{ padding: '2rem', textAlign: 'center', color: '#ff6b6b' }}>
+          <p>Error: {activeError}</p>
         </div>
-      )}
+      ) : (
+        <>
+          {mode === 'classic' && (
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+              <button
+                onClick={() => setListType('main')}
+                style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', border: '1px solid #5865F2', background: listType === 'main' ? '#5865F2' : 'transparent', color: listType === 'main' ? 'white' : '#c084fc', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600 }}
+              >
+                Principales ({mainLevels.length})
+              </button>
+              <button
+                onClick={() => setListType('pending')}
+                style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', border: '1px solid #5865F2', background: listType === 'pending' ? '#5865F2' : 'transparent', color: listType === 'pending' ? 'white' : '#c084fc', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600 }}
+              >
+                Pending ({pendingLevels.length})
+              </button>
+            </div>
+          )}
 
-      <p style={{ color: '#9ca3af', fontSize: '0.875rem', marginBottom: '1rem' }}>
-        {listType === 'main' ? 'Principales' : 'Pending'}: mostrando {filtered.length} de {activeLevels.length} niveles
-      </p>
+          <input
+            type="text"
+            placeholder='Buscar nivel... (^empieza | acaba$)'
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            style={{ width: '100%', padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid #d1d5db', background: 'white', color: '#111827', fontSize: '0.95rem', marginBottom: '1rem', boxSizing: 'border-box' }}
+          />
 
-      <div style={{ display: 'grid', gap: '1rem', maxWidth: '800px' }}>
-        {grouped ? (
-          grouped.map(([tier, tierLevels]) => (
-            <div key={tier}>
-              <h2 style={{ color: '#c084fc', fontSize: '1.1rem', marginBottom: '0.5rem', borderBottom: '1px solid #374151', paddingBottom: '0.25rem' }}>
-                {tier} ({tierLevels.length})
-              </h2>
-              <div style={{ display: 'grid', gap: '1rem' }}>
-                {tierLevels.map(renderCard)}
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            style={{ padding: '0.5rem 1rem', borderRadius: '6px', border: '1px solid #374151', background: showFilters ? '#5865F2' : '#374151', color: 'white', cursor: 'pointer', marginBottom: '1rem', fontSize: '0.875rem' }}
+          >
+            {showFilters ? 'Ocultar filtros' : 'Mostrar filtros'}
+          </button>
+
+          {showFilters && (
+            <div style={{ background: '#1f2937', border: '1px solid #374151', borderRadius: '8px', padding: '1.5rem', marginBottom: '1rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem' }}>
+
+                <div style={sectionStyle}>
+                  <span style={sectionLabelStyle}>Ordenar por</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                    {sortOptions.map(({ value, label }) => (
+                      <label key={value} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#d1d5db', fontSize: '0.875rem', cursor: 'pointer' }}>
+                        <input
+                          type="radio"
+                          name="sort"
+                          checked={sortType === value}
+                          onChange={() => { setSortType(value); setSortDir('asc') }}
+                          style={{ accentColor: '#5865F2' }}
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+
+                  {sortType !== 'none' && (
+                    <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem' }}>
+                      <button
+                        onClick={() => setSortDir('asc')}
+                        style={{ padding: '0.3rem 0.7rem', borderRadius: '4px', border: '1px solid #5865F2', background: sortDir === 'asc' ? '#5865F2' : 'transparent', color: sortDir === 'asc' ? 'white' : '#5865F2', cursor: 'pointer', fontSize: '0.8rem' }}
+                      >
+                        ↑ Asc
+                      </button>
+                      <button
+                        onClick={() => setSortDir('desc')}
+                        style={{ padding: '0.3rem 0.7rem', borderRadius: '4px', border: '1px solid #5865F2', background: sortDir === 'desc' ? '#5865F2' : 'transparent', color: sortDir === 'desc' ? 'white' : '#5865F2', cursor: 'pointer', fontSize: '0.8rem' }}
+                      >
+                        ↓ Desc
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {mode === 'classic' && (
+                  <>
+                    <div style={sectionStyle}>
+                      <span style={sectionLabelStyle}>Agrupar</span>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#d1d5db', fontSize: '0.875rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={groupByNlw}
+                          onChange={e => setGroupByNlw(e.target.checked)}
+                          style={{ accentColor: '#5865F2' }}
+                        />
+                        Group by NLW tiers
+                      </label>
+                    </div>
+
+                    <div style={sectionStyle}>
+                      <span style={sectionLabelStyle}>NLW Tiers</span>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                        {uniqueNlwTiers.map(tier => (
+                          <label key={tier} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: '#d1d5db', fontSize: '0.8rem', cursor: 'pointer', background: selectedNlwTiers.has(tier) ? '#5865F2' : '#2e303a', padding: '0.25rem 0.5rem', borderRadius: '4px' }}>
+                            <input
+                              type="checkbox"
+                              checked={selectedNlwTiers.has(tier)}
+                              onChange={() => toggleNlwTier(tier)}
+                              style={{ accentColor: '#5865F2' }}
+                            />
+                            {tier}
+                          </label>
+                        ))}
+                        {uniqueNlwTiers.length === 0 && <span style={{ color: '#6b7280', fontSize: '0.8rem' }}>No hay tiers</span>}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <div style={sectionStyle}>
+                  <span style={sectionLabelStyle}>Posición</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#d1d5db', fontSize: '0.875rem' }}>
+                    <input type="number" placeholder="Min" value={posMin} onChange={e => setPosMin(e.target.value)} style={inputStyle} />
+                    <span>—</span>
+                    <input type="number" placeholder="Max" value={posMax} onChange={e => setPosMax(e.target.value)} style={inputStyle} />
+                  </div>
+                </div>
+
+                <div style={sectionStyle}>
+                  <span style={sectionLabelStyle}>EDEL Enjoyment</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#d1d5db', fontSize: '0.875rem' }}>
+                    <input type="number" step="0.1" placeholder="Min" value={edelMin} onChange={e => setEdelMin(e.target.value)} style={inputStyle} />
+                    <span>—</span>
+                    <input type="number" step="0.1" placeholder="Max" value={edelMax} onChange={e => setEdelMax(e.target.value)} style={inputStyle} />
+                  </div>
+                </div>
+
+                <div style={sectionStyle}>
+                  <span style={sectionLabelStyle}>GDDL Tier</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#d1d5db', fontSize: '0.875rem' }}>
+                    <input type="number" placeholder="Min" value={gddlMin} onChange={e => setGddlMin(e.target.value)} style={inputStyle} />
+                    <span>—</span>
+                    <input type="number" placeholder="Max" value={gddlMax} onChange={e => setGddlMax(e.target.value)} style={inputStyle} />
+                  </div>
+                </div>
+
               </div>
             </div>
-          ))
-        ) : (
-          filtered.map(renderCard)
-        )}
-        {filtered.length === 0 && (
-          <p style={{ color: '#9ca3af', textAlign: 'center', padding: '2rem' }}>No se encontraron niveles</p>
-        )}
-      </div>
+          )}
+
+          <div style={{ display: 'grid', gap: '1rem', maxWidth: '800px' }}>
+            {grouped ? (
+              grouped.map(([tier, tierLevels]) => (
+                <div key={tier}>
+                  <h2 style={{ color: '#c084fc', fontSize: '1.1rem', marginBottom: '0.5rem', borderBottom: '1px solid #374151', paddingBottom: '0.25rem' }}>
+                    {tier} ({tierLevels.length})
+                  </h2>
+                  <div style={{ display: 'grid', gap: '1rem' }}>
+                    {tierLevels.map(renderCard)}
+                  </div>
+                </div>
+              ))
+            ) : (
+              filtered.map(renderCard)
+            )}
+            {filtered.length === 0 && (
+              <p style={{ color: '#9ca3af', textAlign: 'center', padding: '2rem' }}>No se encontraron niveles</p>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
