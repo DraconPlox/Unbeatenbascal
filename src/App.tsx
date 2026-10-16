@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Index } from './pages/Index'
 import { Niveles } from './pages/Niveles'
-import { AuthProvider } from './context/AuthContext'
+import { AuthProvider, useAuth } from './context/AuthContext'
 
 type View = 'home' | 'niveles' | 'estadisticas'
+
+// Acceso desde el navbar: listo pero oculto de momento (el login vive en el
+// sidebar). Ponlo a true cuando quieras mostrarlo.
+const SHOW_NAVBAR_ACCESS = false
 
 const navItems: { id: View; label: string; icon: React.ReactNode }[] = [
   { id: 'home', label: 'Home', icon: (
@@ -27,6 +31,7 @@ const navItems: { id: View; label: string; icon: React.ReactNode }[] = [
 ]
 
 function Layout() {
+  const { user, login, logout } = useAuth()
   const [activeView, setActiveView] = useState<View>('home')
   // En ventanas pequeñas el menú arranca comprimido para dejar sitio al contenido.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
@@ -86,6 +91,21 @@ function Layout() {
             </button>
           ))}
         </nav>
+
+        {/* Acceso desde el navbar. Oculto de momento: activa SHOW_NAVBAR_ACCESS. */}
+        {SHOW_NAVBAR_ACCESS && (
+          <div className="sidebar-login">
+            {user ? (
+              <button type="button" className="btn btn-secondary" onClick={logout}>
+                Cerrar sesión
+              </button>
+            ) : (
+              <button type="button" className="btn btn-primary" onClick={login}>
+                Iniciar sesión
+              </button>
+            )}
+          </div>
+        )}
       </aside>
 
       <main className="app-main">

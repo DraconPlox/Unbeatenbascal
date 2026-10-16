@@ -371,6 +371,365 @@
     color: white;
     border-color: #6b7280;
   }
+
+  /* ---------- Home / introducción ---------- */
+
+  .home-page {
+    max-width: 900px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    /* Ocupa todo el alto disponible: la página no hace scroll, solo la
+       lista del changelog internamente. */
+    height: 100%;
+    min-height: 0;
+  }
+
+  .home-page a {
+    color: #c084fc;
+  }
+
+  .home-hero {
+    padding: 0.85rem;
+    border-radius: 14px;
+    border: 1px solid var(--color-dark-border);
+    background:
+      radial-gradient(120% 140% at 50% 0%, rgba(88, 101, 242, 0.22) 0%, rgba(31, 41, 55, 0) 60%),
+      var(--color-dark-card);
+    text-align: center;
+  }
+
+  .home-badge {
+    display: inline-block;
+    padding: 0.2rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid rgba(88, 101, 242, 0.45);
+    background-color: rgba(88, 101, 242, 0.15);
+    color: #c084fc;
+    font-size: 0.64rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+  }
+
+  .home-title {
+    margin: 0.45rem 0 0.3rem;
+    font-size: clamp(1.5rem, 4.5vw, 2.1rem);
+    line-height: 1.05;
+    font-weight: 800;
+    background: linear-gradient(120deg, #ffffff 10%, #c084fc 55%, #8b95f6 90%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .home-tagline {
+    max-width: 760px;
+    margin: 0 auto;
+    color: var(--color-dark-text-muted);
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  .home-section-title {
+    margin: 0 0 0.4rem;
+    font-size: 0.95rem;
+  }
+
+  .home-intro {
+    padding: 0.85rem;
+    border-radius: 12px;
+    border: 1px solid var(--color-dark-border);
+    background-color: var(--color-dark-card);
+  }
+
+  .home-intro p {
+    margin: 0 0 0.5rem;
+    color: var(--color-dark-text-muted);
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  .home-intro p:last-child {
+    margin-bottom: 0;
+  }
+
+  .home-intro strong {
+    color: var(--color-dark-text);
+  }
+
+  /* ---------- Changelog (incrustado en la Home) ---------- */
+
+  .changelog-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding: 1rem;
+    border-radius: 12px;
+    border: 1px solid var(--color-dark-border);
+    background-color: var(--color-dark-card);
+    /* Crece hasta llenar el hueco que dejan el hero y la intro. */
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .changelog-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    flex-shrink: 0;
+  }
+
+  .changelog-title {
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  .changelog-toggle {
+    display: flex;
+    gap: 0.4rem;
+    flex-shrink: 0;
+  }
+
+  .changelog-toggle-btn {
+    padding: 0.35rem 0.8rem;
+    border-radius: 6px;
+    border: 1px solid var(--color-dark-primary);
+    background: transparent;
+    color: #c084fc;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+
+  .changelog-toggle-btn.is-active {
+    background-color: var(--color-dark-primary);
+    color: white;
+  }
+
+  .changelog-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    /* Ocupa el alto restante de la sección y hace scroll por dentro. */
+    flex: 1 1 auto;
+    min-height: 120px;
+    overflow-y: auto;
+    padding-right: 0.35rem;
+    transition: opacity 0.15s ease;
+  }
+
+  .changelog-list.is-loading {
+    opacity: 0.5;
+  }
+
+  /* Scroll temático para la lista del changelog. */
+  .changelog-list::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .changelog-list::-webkit-scrollbar-track {
+    background-color: var(--color-dark-bg);
+    border-radius: 999px;
+  }
+
+  .changelog-list::-webkit-scrollbar-thumb {
+    background-color: var(--color-dark-border);
+    border-radius: 999px;
+  }
+
+  .changelog-list::-webkit-scrollbar-thumb:hover {
+    background-color: #4b5563;
+  }
+
+  .changelog-day {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .changelog-day-title {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    margin: 0;
+    padding: 0.15rem 0 0.3rem;
+    border-bottom: 1px solid var(--color-dark-border);
+    background-color: var(--color-dark-card);
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #c084fc;
+  }
+
+  .changelog-entries {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .changelog-entry {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 0.45rem 0.6rem;
+    border-radius: 8px;
+    border: 1px solid var(--color-dark-border);
+    background-color: var(--color-dark-bg);
+    font-size: 0.82rem;
+    line-height: 1.4;
+  }
+
+  .changelog-badge {
+    flex-shrink: 0;
+    min-width: 66px;
+    padding: 0.18rem 0.45rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-align: center;
+    text-transform: uppercase;
+  }
+
+  .changelog-badge.tone-raised {
+    background-color: rgba(74, 222, 128, 0.12);
+    border-color: rgba(74, 222, 128, 0.35);
+    color: #4ade80;
+  }
+
+  .changelog-badge.tone-lowered,
+  .changelog-badge.tone-removed {
+    background-color: rgba(248, 113, 113, 0.12);
+    border-color: rgba(248, 113, 113, 0.35);
+    color: #f87171;
+  }
+
+  .changelog-badge.tone-pending {
+    background-color: rgba(250, 204, 21, 0.12);
+    border-color: rgba(250, 204, 21, 0.35);
+    color: #facc15;
+  }
+
+  .changelog-badge.tone-placed {
+    background-color: rgba(88, 101, 242, 0.15);
+    border-color: rgba(88, 101, 242, 0.4);
+    color: #8b95f6;
+  }
+
+  .changelog-badge.tone-swapped {
+    background-color: rgba(192, 132, 252, 0.15);
+    border-color: rgba(192, 132, 252, 0.4);
+    color: #c084fc;
+  }
+
+  .changelog-badge.tone-legacy,
+  .changelog-badge.tone-unknown {
+    background-color: rgba(156, 163, 175, 0.12);
+    border-color: rgba(156, 163, 175, 0.35);
+    color: #9ca3af;
+  }
+
+  .changelog-entry-text {
+    color: var(--color-dark-text);
+  }
+
+  .changelog-level-name {
+    color: white;
+    font-weight: 600;
+  }
+
+  .changelog-pos {
+    color: #c084fc;
+    font-weight: 600;
+  }
+
+  .changelog-neighbour {
+    color: var(--color-dark-text-muted);
+  }
+
+  .changelog-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.25rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--color-dark-border);
+    flex-shrink: 0;
+  }
+
+  .changelog-page-btn {
+    min-width: 32px;
+    padding: 0.3rem 0.55rem;
+    border-radius: 6px;
+    border: 1px solid var(--color-dark-border);
+    background-color: var(--color-dark-bg);
+    color: var(--color-dark-text-muted);
+    cursor: pointer;
+    font-size: 0.78rem;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+
+  .changelog-page-btn:hover:not(:disabled) {
+    background-color: var(--color-dark-border);
+    color: white;
+  }
+
+  .changelog-page-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
+  .changelog-page-btn.is-active {
+    background-color: var(--color-dark-primary);
+    border-color: var(--color-dark-primary);
+    color: white;
+    font-weight: 700;
+  }
+
+  .changelog-page-gap {
+    padding: 0 0.2rem;
+    color: var(--color-dark-text-muted);
+  }
+
+  .changelog-page-info {
+    width: 100%;
+    margin-top: 0.15rem;
+    text-align: center;
+    color: var(--color-dark-text-muted);
+    font-size: 0.75rem;
+  }
+
+  .changelog-loading {
+    padding: 2rem 0;
+    text-align: center;
+    color: var(--color-dark-text-muted);
+  }
+
+  .changelog-spinner {
+    margin-bottom: 0.5rem;
+    font-size: 2rem;
+  }
+
+  .changelog-error {
+    padding: 2rem;
+    text-align: center;
+    color: #ff6b6b;
+  }
+
+  .changelog-error-hint {
+    color: var(--color-dark-text-muted);
+    font-size: 0.85rem;
+  }
 }
 
 @layer utilities {
@@ -412,6 +771,24 @@
 
     .user-info span {
       display: none;
+    }
+
+    .home-hero {
+      padding: 1.25rem 1rem;
+    }
+
+    .changelog-head {
+      align-items: stretch;
+    }
+
+    .changelog-entry {
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .changelog-badge {
+      min-width: 0;
+      align-self: flex-start;
     }
   }
 }
