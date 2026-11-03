@@ -84,6 +84,11 @@ const formatRecordDate = (value: string | null | undefined) => {
   return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
+// Símbolos monocromos. VS15 (U+FE0E) fuerza la presentación de texto para que
+// no se rendericen como emoji en plataformas que los tengan en color.
+const MOBILE_SYMBOL = '\u{1F4DE}\uFE0E'
+const VIDEO_SYMBOL = '\u25B6\uFE0E'
+
 const labelStyle = { fontWeight: 600, color: '#374151' }
 
 type SortType = 'aredl' | 'edel' | 'none'
@@ -482,15 +487,21 @@ export function Niveles() {
                       {meta && <span className="demonlist-record-meta">{meta}</span>}
                     </div>
                     <div className="demonlist-record-actions">
-                      {record.mobile && <span className="demonlist-record-tag">Móvil</span>}
+                      {record.mobile && (
+                        <span className="demonlist-record-tag" title="Móvil" aria-label="Móvil">
+                          {MOBILE_SYMBOL}
+                        </span>
+                      )}
                       {record.video_url && !record.hide_video && (
                         <a
                           className="demonlist-record-link"
                           href={record.video_url}
                           target="_blank"
                           rel="noreferrer"
+                          title="Vídeo"
+                          aria-label="Vídeo"
                         >
-                          Vídeo
+                          {VIDEO_SYMBOL}
                         </a>
                       )}
                     </div>
