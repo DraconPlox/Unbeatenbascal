@@ -284,6 +284,27 @@
     opacity: 0.75;
   }
 
+  .demonlist-row-records {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 0.3rem;
+    border-radius: 999px;
+    background-color: var(--color-dark-primary);
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .demonlist-row.is-selected .demonlist-row-records {
+    background-color: white;
+    color: var(--color-dark-primary);
+  }
+
   .demonlist-group {
     position: sticky;
     top: 0;
@@ -335,6 +356,83 @@
     font-size: 0.75rem;
     background-color: var(--color-dark-border);
     color: var(--color-dark-text-muted);
+  }
+
+  .demonlist-records-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .demonlist-record {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.5rem 0.65rem;
+    background-color: var(--color-dark-bg);
+    border: 1px solid var(--color-dark-border);
+    border-radius: 6px;
+    font-size: 0.85rem;
+  }
+
+  .demonlist-record-main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+  }
+
+  .demonlist-record-user {
+    overflow: hidden;
+    color: var(--color-dark-text);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .demonlist-record-meta {
+    font-size: 0.75rem;
+    color: var(--color-dark-text-muted);
+  }
+
+  .demonlist-record-actions {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 0.4rem;
+  }
+
+  .demonlist-record-tag {
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    background-color: var(--color-dark-border);
+    color: var(--color-dark-text-muted);
+  }
+
+  .demonlist-record-link {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #c084fc;
+    text-decoration: none;
+  }
+
+  .demonlist-record-link:hover {
+    text-decoration: underline;
+  }
+
+  .demonlist-records-hint {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--color-dark-text-muted);
+  }
+
+  .demonlist-records-hint-error {
+    color: #ff6b6b;
   }
 
   .btn {

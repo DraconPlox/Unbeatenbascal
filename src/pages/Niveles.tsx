@@ -1,5 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { Level } from '../objects'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ClanLevelRecord, ClanProfile, Level } from '../objects'
+
+// Clan JEWBASCAL en AREDL.
+const CLAN_ID = '146a7fb4-a87a-42db-9795-3d46d3c74c8b'
 
 function aredlAuthHeaders(): Record<string, string> {
   const storedUser = localStorage.getItem('aredl_user')
@@ -38,10 +41,10 @@ export async function fetchLevels(excludePending: boolean) {
 // Los niveles de plataforma viven en el endpoint AREPL de la AREDL.
 // Gracias a exclude_legacy=true se descartan dinamicamente los que ya no son
 // extreme demons, sin tener que hardcodear la cantidad de niveles.
-export async function fetchPlatformerLevels() {
+export async function fetchPlatformerLevels(excludePending = true) {
   const params = new URLSearchParams({
     exclude_legacy: 'true',
-    exclude_pending: 'true',
+    exclude_pending: excludePending.toString(),
     exclude_removed: 'true',
   })
 
@@ -64,12 +67,55 @@ const formatEdelEnjoyment = (value: number | null | undefined) => {
 }
 const formatGDDLTier = (value: number | null | undefined) => value !== null && value !== undefined ? Math.ceil(value).toString() : 'N/A'
 
+// completion_time llega en milisegundos.
+const formatRecordTime = (milliseconds: number) => {
+  const totalSeconds = Math.round(milliseconds / 1000)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`
+}
+
+const formatRecordDate = (value: string | null | undefined) => {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
 const labelStyle = { fontWeight: 600, color: '#374151' }
 
 type SortType = 'aredl' | 'edel' | 'none'
 type SortDir = 'asc' | 'desc'
 type ListType = 'main' | 'pending'
 type Mode = 'classic' | 'platformer'
+type ListKey = 'aredl' | 'arepl'
+
+const listKeyForMode = (mode: Mode): ListKey => (mode === 'platformer' ? 'arepl' : 'aredl')
+
+async function fetchClanProfile(mode: Mode): Promise<ClanProfile> {
+  const list = listKeyForMode(mode)
+  const response = await fetch(`https://api.aredl.net/v2/api/${list}/clan/${CLAN_ID}`, {
+    headers: aredlAuthHeaders(),
+  })
+  if (!response.ok) {
+    throw new Error('Failed to fetch clan records')
+  }
+  return response.json() as Promise<ClanProfile>
+}
+
+// Todos los victors del clan en un nivel (no solo el primero, como en el perfil).
+async function fetchClanLevelRecords(mode: Mode, levelId: string): Promise<ClanLevelRecord[]> {
+  const list = listKeyForMode(mode)
+  const response = await fetch(`https://api.aredl.net/v2/api/${list}/clan/${CLAN_ID}/levels/${levelId}/records`, {
+    headers: aredlAuthHeaders(),
+  })
+  if (!response.ok) {
+    throw new Error('Failed to fetch clan level records')
+  }
+  return response.json() as Promise<ClanLevelRecord[]>
+}
 
 const inputStyle: React.CSSProperties = {
   padding: '0.4rem 0.6rem',
@@ -123,6 +169,7 @@ export function Niveles() {
   const [mainLevels, setMainLevels] = useState<Level[]>([])
   const [pendingLevels, setPendingLevels] = useState<Level[]>([])
   const [platformerLevels, setPlatformerLevels] = useState<Level[]>([])
+  const [platformerPendingLevels, setPlatformerPendingLevels] = useState<Level[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [platformerError, setPlatformerError] = useState<string | null>(null)
@@ -143,6 +190,13 @@ export function Niveles() {
   const [gddlMax, setGddlMax] = useState('')
   const [showFilters, setShowFilters] = useState(false)
 
+  // Número de récords del clan por nivel, con clave `${list}:${level.id}`.
+  const [clanCounts, setClanCounts] = useState<Record<string, number>>({})
+  const [detailRecords, setDetailRecords] = useState<ClanLevelRecord[]>([])
+  const [recordsLoading, setRecordsLoading] = useState(false)
+  const [recordsError, setRecordsError] = useState<string | null>(null)
+  const recordsCache = useRef(new Map<string, ClanLevelRecord[]>())
+
   useEffect(() => {
     const loadLevels = async () => {
       setLoading(true)
@@ -154,7 +208,13 @@ export function Niveles() {
           ])
           return { main, pending: pending.filter(l => l.status.toLowerCase() === 'pending') }
         })(),
-        fetchPlatformerLevels(),
+        (async () => {
+          const [main, pending] = await Promise.all([
+            fetchPlatformerLevels(true),
+            fetchPlatformerLevels(false),
+          ])
+          return { main, pending: pending.filter(l => l.status.toLowerCase() === 'pending') }
+        })(),
       ])
 
       if (classic.status === 'fulfilled') {
@@ -166,7 +226,8 @@ export function Niveles() {
       }
 
       if (platformer.status === 'fulfilled') {
-        setPlatformerLevels(platformer.value)
+        setPlatformerLevels(platformer.value.main)
+        setPlatformerPendingLevels(platformer.value.pending)
         setPlatformerError(null)
       } else {
         setPlatformerError(platformer.reason instanceof Error ? platformer.reason.message : 'Error desconocido')
@@ -177,9 +238,38 @@ export function Niveles() {
     loadLevels()
   }, [])
 
+  // El perfil de clan ya devuelve, por nivel, cuántos miembros lo han completado.
+  useEffect(() => {
+    let cancelled = false
+
+    const loadClanCounts = async () => {
+      const [classic, platformer] = await Promise.allSettled([
+        fetchClanProfile('classic'),
+        fetchClanProfile('platformer'),
+      ])
+      if (cancelled) return
+
+      const counts: Record<string, number> = {}
+      if (classic.status === 'fulfilled') {
+        classic.value.records.forEach(record => {
+          counts[`aredl:${record.level.id}`] = record.completion_count
+        })
+      }
+      if (platformer.status === 'fulfilled') {
+        platformer.value.records.forEach(record => {
+          counts[`arepl:${record.level.id}`] = record.completion_count
+        })
+      }
+      setClanCounts(counts)
+    }
+
+    loadClanCounts()
+    return () => { cancelled = true }
+  }, [])
+
   const activeLevels = mode === 'platformer'
-    ? platformerLevels
-    : listType === 'main' ? mainLevels : pendingLevels
+    ? (listType === 'main' ? platformerLevels : platformerPendingLevels)
+    : (listType === 'main' ? mainLevels : pendingLevels)
 
   const activeError = mode === 'platformer' ? platformerError : error
   const isPlatformer = mode === 'platformer'
@@ -224,6 +314,46 @@ export function Niveles() {
     [filtered, selectedId],
   )
 
+  // Los récords completos del clan se piden solo para el nivel abierto.
+  useEffect(() => {
+    if (!selected) {
+      setDetailRecords([])
+      setRecordsError(null)
+      setRecordsLoading(false)
+      return
+    }
+
+    const cacheKey = `${listKeyForMode(mode)}:${selected.id}`
+    const cached = recordsCache.current.get(cacheKey)
+    if (cached) {
+      setDetailRecords(cached)
+      setRecordsError(null)
+      setRecordsLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setDetailRecords([])
+    setRecordsError(null)
+    setRecordsLoading(true)
+
+    fetchClanLevelRecords(mode, selected.id)
+      .then(records => {
+        if (cancelled) return
+        recordsCache.current.set(cacheKey, records)
+        setDetailRecords(records)
+      })
+      .catch(err => {
+        if (cancelled) return
+        setRecordsError(err instanceof Error ? err.message : 'Error desconocido')
+      })
+      .finally(() => {
+        if (!cancelled) setRecordsLoading(false)
+      })
+
+    return () => { cancelled = true }
+  }, [mode, selected])
+
   const toggleNlwTier = (tier: string) => {
     setSelectedNlwTiers(prev => {
       const next = new Set(prev)
@@ -246,12 +376,6 @@ export function Niveles() {
     setSortDir('asc')
   }
 
-  // Los récords (jugadores que se han pasado el nivel) todavía NO se cargan:
-  // se dejan vacíos a propósito. Cuando toque, se pueden pedir a
-  //   /api/aredl/levels/{level_id}/records  (clásico)
-  //   /api/arepl/levels/{level_id}/records  (plataforma)
-  const records: { player: string; time: string }[] = []
-
   const renderStat = (label: string, value: string) => (
     <div className="demonlist-stat">
       <div className="demonlist-stat-label">{label}</div>
@@ -259,21 +383,38 @@ export function Niveles() {
     </div>
   )
 
-  const renderRow = (level: Level) => (
-    <button
-      key={level.id}
-      type="button"
-      onClick={() => setSelectedId(level.id)}
-      className={`demonlist-row${selected?.id === level.id ? ' is-selected' : ''}`}
-    >
-      <span className="demonlist-row-pos">#{level.position}</span>
-      <span className="demonlist-row-name">{level.name}</span>
-      <span className="demonlist-row-points">{formatPoints(level.points)}</span>
-    </button>
-  )
+  const renderRow = (level: Level) => {
+    const clanRecordCount = clanCounts[`${listKeyForMode(mode)}:${level.id}`] ?? 0
+
+    return (
+      <button
+        key={level.id}
+        type="button"
+        onClick={() => setSelectedId(level.id)}
+        className={`demonlist-row${selected?.id === level.id ? ' is-selected' : ''}`}
+      >
+        <span className="demonlist-row-pos">#{level.position}</span>
+        <span className="demonlist-row-name">{level.name}</span>
+        {clanRecordCount > 0 && (
+          <span
+            className="demonlist-row-records"
+            title={`${clanRecordCount} ${clanRecordCount === 1 ? 'récord' : 'récords'} del clan`}
+          >
+            {clanRecordCount}
+          </span>
+        )}
+        <span className="demonlist-row-points">{formatPoints(level.points)}</span>
+      </button>
+    )
+  }
 
   const renderDetail = (level: Level) => {
     const tags = level.tags.filter((tag): tag is string => Boolean(tag))
+    const sortedRecords = [...detailRecords].sort((a, b) => {
+      const dateA = new Date(a.achieved_at ?? a.created_at).getTime()
+      const dateB = new Date(b.achieved_at ?? b.created_at).getTime()
+      return dateA - dateB
+    })
 
     return (
       <div className="demonlist-detail">
@@ -312,16 +453,50 @@ export function Niveles() {
         </div>
 
         <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid var(--color-dark-border)' }}>
-          <h3 style={{ margin: '0 0 0.5rem', fontSize: '1rem' }}>Récords ({records.length})</h3>
-          {records.length === 0 ? (
-            <p style={{ margin: 0, color: 'var(--color-dark-text-muted)', fontSize: '0.85rem' }}>
-              Sin récords todavía.
+          <h3 style={{ margin: '0 0 0.5rem', fontSize: '1rem' }}>
+            Récords del clan {recordsLoading ? '' : `(${detailRecords.length})`}
+          </h3>
+          {recordsLoading ? (
+            <p className="demonlist-records-hint">Cargando récords del clan...</p>
+          ) : recordsError ? (
+            <p className="demonlist-records-hint demonlist-records-hint-error">
+              No se pudieron cargar los récords del clan.
+            </p>
+          ) : sortedRecords.length === 0 ? (
+            <p className="demonlist-records-hint">
+              Ningún miembro del clan ha completado este nivel.
             </p>
           ) : (
-            <ul style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.9rem' }}>
-              {records.map((record, index) => (
-                <li key={index}>{record.player} — {record.time}</li>
-              ))}
+            <ul className="demonlist-records-list">
+              {sortedRecords.map(record => {
+                const time = record.completion_time ? formatRecordTime(record.completion_time) : ''
+                const date = formatRecordDate(record.achieved_at ?? record.created_at)
+                const meta = [time, date].filter(Boolean).join(' · ')
+
+                return (
+                  <li key={record.id} className="demonlist-record">
+                    <div className="demonlist-record-main">
+                      <span className="demonlist-record-user">
+                        {record.submitted_by.global_name || record.submitted_by.username}
+                      </span>
+                      {meta && <span className="demonlist-record-meta">{meta}</span>}
+                    </div>
+                    <div className="demonlist-record-actions">
+                      {record.mobile && <span className="demonlist-record-tag">Móvil</span>}
+                      {record.video_url && !record.hide_video && (
+                        <a
+                          className="demonlist-record-link"
+                          href={record.video_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Vídeo
+                        </a>
+                      )}
+                    </div>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </div>
@@ -369,22 +544,20 @@ export function Niveles() {
         </div>
       ) : (
         <>
-          {mode === 'classic' && (
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
-              <button
-                onClick={() => setListType('main')}
-                style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', border: '1px solid #5865F2', background: listType === 'main' ? '#5865F2' : 'transparent', color: listType === 'main' ? 'white' : '#c084fc', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600 }}
-              >
-                Principales
-              </button>
-              <button
-                onClick={() => setListType('pending')}
-                style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', border: '1px solid #5865F2', background: listType === 'pending' ? '#5865F2' : 'transparent', color: listType === 'pending' ? 'white' : '#c084fc', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600 }}
-              >
-                Pending
-              </button>
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+            <button
+              onClick={() => setListType('main')}
+              style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', border: '1px solid #5865F2', background: listType === 'main' ? '#5865F2' : 'transparent', color: listType === 'main' ? 'white' : '#c084fc', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600 }}
+            >
+              Principales
+            </button>
+            <button
+              onClick={() => setListType('pending')}
+              style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', border: '1px solid #5865F2', background: listType === 'pending' ? '#5865F2' : 'transparent', color: listType === 'pending' ? 'white' : '#c084fc', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600 }}
+            >
+              Pending
+            </button>
+          </div>
 
           <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', alignItems: 'stretch' }}>
             <input
