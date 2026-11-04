@@ -1,66 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ClanLevelRecord, ClanProfile, Level } from '../objects'
+import { aredlLevelUrl, aredlUserUrl, fetchClanLevelRecords, fetchLevels, fetchPlatformerLevels } from '../api/aredl'
+import type { ListKey } from '../api/aredl'
+import { ErrorState, LoadingState } from '../components/PageState'
+import { useClan } from '../context/ClanContext'
+import type { ClanLevelRecord, Level } from '../objects'
+import { MOBILE_SYMBOL, VIDEO_SYMBOL, formatPoints, formatRecordDate } from '../utils/format'
 
-// Clan JEWBASCAL en AREDL.
-const CLAN_ID = '146a7fb4-a87a-42db-9795-3d46d3c74c8b'
-
-function aredlAuthHeaders(): Record<string, string> {
-  const storedUser = localStorage.getItem('aredl_user')
-  const headers: Record<string, string> = {}
-
-  if (storedUser) {
-    try {
-      const user = JSON.parse(storedUser)
-      if (user.access_token) {
-        headers.Authorization = `Bearer ${user.access_token}`
-      }
-    } catch {
-      localStorage.removeItem('aredl_user')
-    }
-  }
-
-  return headers
-}
-
-export async function fetchLevels(excludePending: boolean) {
-  const params = new URLSearchParams({
-    exclude_legacy: 'true',
-    exclude_pending: excludePending.toString(),
-    exclude_removed: 'true',
-  })
-
-  const response = await fetch(`https://api.aredl.net/v2/api/aredl/levels?${params}`, {
-    headers: aredlAuthHeaders(),
-  })
-  if (!response.ok) {
-    throw new Error('Failed to fetch levels')
-  }
-  return response.json() as Promise<Level[]>
-}
-
-// Los niveles de plataforma viven en el endpoint AREPL de la AREDL.
-// Gracias a exclude_legacy=true se descartan dinamicamente los que ya no son
-// extreme demons, sin tener que hardcodear la cantidad de niveles.
-export async function fetchPlatformerLevels(excludePending = true) {
-  const params = new URLSearchParams({
-    exclude_legacy: 'true',
-    exclude_pending: excludePending.toString(),
-    exclude_removed: 'true',
-  })
-
-  const response = await fetch(`https://api.aredl.net/v2/api/arepl/levels?${params}`, {
-    headers: aredlAuthHeaders(),
-  })
-  if (!response.ok) {
-    throw new Error('Failed to fetch platformer levels')
-  }
-  return response.json() as Promise<Level[]>
-}
-
-const formatPoints = (points: number) => {
-  const value = points / 10
-  return value % 1 === 0 ? value.toString() : value.toFixed(1)
-}
 const formatEdelEnjoyment = (value: number | null | undefined) => {
   if (value === null || value === undefined) return 'N/A'
   return value % 1 === 0 ? value.toString() : value.toFixed(2)
@@ -77,50 +22,14 @@ const formatRecordTime = (milliseconds: number) => {
   return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`
 }
 
-const formatRecordDate = (value: string | null | undefined) => {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })
-}
-
-// Símbolos monocromos. VS15 (U+FE0E) fuerza la presentación de texto para que
-// no se rendericen como emoji en plataformas que los tengan en color.
-const MOBILE_SYMBOL = '\u{1F4DE}\uFE0E'
-const VIDEO_SYMBOL = '\u25B6\uFE0E'
-
 const labelStyle = { fontWeight: 600, color: '#374151' }
 
 type SortType = 'aredl' | 'edel' | 'none'
 type SortDir = 'asc' | 'desc'
 type ListType = 'main' | 'pending'
 type Mode = 'classic' | 'platformer'
-type ListKey = 'aredl' | 'arepl'
 
 const listKeyForMode = (mode: Mode): ListKey => (mode === 'platformer' ? 'arepl' : 'aredl')
-
-async function fetchClanProfile(mode: Mode): Promise<ClanProfile> {
-  const list = listKeyForMode(mode)
-  const response = await fetch(`https://api.aredl.net/v2/api/${list}/clan/${CLAN_ID}`, {
-    headers: aredlAuthHeaders(),
-  })
-  if (!response.ok) {
-    throw new Error('Failed to fetch clan records')
-  }
-  return response.json() as Promise<ClanProfile>
-}
-
-// Todos los victors del clan en un nivel (no solo el primero, como en el perfil).
-async function fetchClanLevelRecords(mode: Mode, levelId: string): Promise<ClanLevelRecord[]> {
-  const list = listKeyForMode(mode)
-  const response = await fetch(`https://api.aredl.net/v2/api/${list}/clan/${CLAN_ID}/levels/${levelId}/records`, {
-    headers: aredlAuthHeaders(),
-  })
-  if (!response.ok) {
-    throw new Error('Failed to fetch clan level records')
-  }
-  return response.json() as Promise<ClanLevelRecord[]>
-}
 
 const inputStyle: React.CSSProperties = {
   padding: '0.4rem 0.6rem',
@@ -171,11 +80,13 @@ const sortLevels = (levels: Level[], sortType: SortType, sortDir: SortDir): Leve
 }
 
 export function Niveles() {
+  const { classic: classicProfile, platformer: platformerProfile, reload: reloadProfiles } = useClan()
   const [mainLevels, setMainLevels] = useState<Level[]>([])
   const [pendingLevels, setPendingLevels] = useState<Level[]>([])
   const [platformerLevels, setPlatformerLevels] = useState<Level[]>([])
   const [platformerPendingLevels, setPlatformerPendingLevels] = useState<Level[]>([])
   const [loading, setLoading] = useState(true)
+  const [levelsRetry, setLevelsRetry] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [platformerError, setPlatformerError] = useState<string | null>(null)
   const [mode, setMode] = useState<Mode>('classic')
@@ -196,7 +107,18 @@ export function Niveles() {
   const [showFilters, setShowFilters] = useState(false)
 
   // Número de récords del clan por nivel, con clave `${list}:${level.id}`.
-  const [clanCounts, setClanCounts] = useState<Record<string, number>>({})
+  // Sale del perfil de clan que carga ClanProvider al abrir la aplicación.
+  const clanCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    classicProfile.data?.records.forEach(record => {
+      counts[`aredl:${record.level.id}`] = record.completion_count
+    })
+    platformerProfile.data?.records.forEach(record => {
+      counts[`arepl:${record.level.id}`] = record.completion_count
+    })
+    return counts
+  }, [classicProfile.data, platformerProfile.data])
+
   const [detailRecords, setDetailRecords] = useState<ClanLevelRecord[]>([])
   const [recordsLoading, setRecordsLoading] = useState(false)
   const [recordsError, setRecordsError] = useState<string | null>(null)
@@ -241,42 +163,14 @@ export function Niveles() {
       setLoading(false)
     }
     loadLevels()
-  }, [])
-
-  // El perfil de clan ya devuelve, por nivel, cuántos miembros lo han completado.
-  useEffect(() => {
-    let cancelled = false
-
-    const loadClanCounts = async () => {
-      const [classic, platformer] = await Promise.allSettled([
-        fetchClanProfile('classic'),
-        fetchClanProfile('platformer'),
-      ])
-      if (cancelled) return
-
-      const counts: Record<string, number> = {}
-      if (classic.status === 'fulfilled') {
-        classic.value.records.forEach(record => {
-          counts[`aredl:${record.level.id}`] = record.completion_count
-        })
-      }
-      if (platformer.status === 'fulfilled') {
-        platformer.value.records.forEach(record => {
-          counts[`arepl:${record.level.id}`] = record.completion_count
-        })
-      }
-      setClanCounts(counts)
-    }
-
-    loadClanCounts()
-    return () => { cancelled = true }
-  }, [])
+  }, [levelsRetry])
 
   const activeLevels = mode === 'platformer'
     ? (listType === 'main' ? platformerLevels : platformerPendingLevels)
     : (listType === 'main' ? mainLevels : pendingLevels)
 
   const activeError = mode === 'platformer' ? platformerError : error
+  const activeProfile = mode === 'platformer' ? platformerProfile : classicProfile
   const isPlatformer = mode === 'platformer'
   const uniqueNlwTiers = useMemo(() => {
     const tiers = new Set<string>()
@@ -342,7 +236,7 @@ export function Niveles() {
     setRecordsError(null)
     setRecordsLoading(true)
 
-    fetchClanLevelRecords(mode, selected.id)
+    fetchClanLevelRecords(listKeyForMode(mode), selected.id)
       .then(records => {
         if (cancelled) return
         recordsCache.current.set(cacheKey, records)
@@ -425,7 +319,17 @@ export function Niveles() {
       <div className="demonlist-detail">
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.6rem' }}>
           <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#c084fc' }}>#{level.position}</span>
-          <h2 style={{ margin: 0, fontSize: '1.5rem' }}>{level.name}</h2>
+          <h2 style={{ margin: 0, fontSize: '1.5rem' }}>
+            <a
+              className="demonlist-level-link"
+              href={aredlLevelUrl(level.level_id, listKeyForMode(mode))}
+              target="_blank"
+              rel="noreferrer"
+              title={`Ver ${level.name} en la AREDL`}
+            >
+              {level.name}
+            </a>
+          </h2>
         </div>
         <p style={{ color: 'var(--color-dark-text-muted)', fontSize: '0.85rem', margin: '0.25rem 0 1rem' }}>
           Level ID: {level.level_id}
@@ -481,9 +385,15 @@ export function Niveles() {
                 return (
                   <li key={record.id} className="demonlist-record">
                     <div className="demonlist-record-main">
-                      <span className="demonlist-record-user">
+                      <a
+                        className="demonlist-record-user"
+                        href={aredlUserUrl(record.submitted_by.id)}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={`Ver el perfil de ${record.submitted_by.global_name || record.submitted_by.username} en la AREDL`}
+                      >
                         {record.submitted_by.global_name || record.submitted_by.username}
-                      </span>
+                      </a>
                       {meta && <span className="demonlist-record-meta">{meta}</span>}
                     </div>
                     <div className="demonlist-record-actions">
@@ -520,13 +430,17 @@ export function Niveles() {
     { value: 'edel', label: 'EDEL Enjoyment' },
   ]
 
-  if (loading) {
+  // La demonlist espera a tener sus niveles y los perfiles del clan (de AREDL
+  // y AREPL) antes de mostrar el listado. Así los badges salen completos desde
+  // el primer render.
+  if (loading || classicProfile.loading || platformerProfile.loading) {
     return (
-      <div style={{ textAlign: 'center', paddingTop: '2rem' }}>
-        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⏳</div>
-        <p>Cargando niveles...</p>
-        <p>Si tarda, comprueba tu conexión a Internet o la página de la AREDL.</p>
-      </div>
+      <LoadingState
+        title={loading ? 'Cargando demonlist...' : 'Cargando récords del clan...'}
+        description={loading
+          ? 'Obteniendo los niveles de la AREDL y la AREPL. Si tarda, comprueba tu conexión a Internet.'
+          : 'Esperando los datos del clan desde la AREDL.'}
+      />
     )
   }
 
@@ -550,9 +464,17 @@ export function Niveles() {
       </div>
 
       {activeError ? (
-        <div style={{ padding: '1rem 0', textAlign: 'center', color: '#ff6b6b' }}>
-          <p>Error: {activeError}</p>
-        </div>
+        <ErrorState
+          title="No se pudo cargar la demonlist"
+          description="Comprueba tu conexión a Internet o el estado de la AREDL e inténtalo de nuevo."
+          onRetry={() => setLevelsRetry(value => value + 1)}
+        />
+      ) : activeProfile.error ? (
+        <ErrorState
+          title="No se pudieron cargar los récords del clan"
+          description="Los niveles están disponibles, pero los récords del clan no. Comprueba tu conexión con la AREDL e inténtalo de nuevo."
+          onRetry={reloadProfiles}
+        />
       ) : (
         <>
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>

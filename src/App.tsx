@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Index } from './pages/Index'
 import { Niveles } from './pages/Niveles'
+import { Estadisticas } from './pages/Estadisticas'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { ClanProvider } from './context/ClanContext'
 
 type View = 'home' | 'niveles' | 'estadisticas'
 
@@ -54,7 +56,7 @@ function Layout() {
       case 'niveles':
         return <Niveles />
       case 'estadisticas':
-        return <div className="stats-placeholder">Estadísticas - Próximamente</div>
+        return <Estadisticas />
       default:
         return <Index />
     }
@@ -118,7 +120,9 @@ function Layout() {
 export default function App() {
   return (
     <AuthProvider>
-      <Layout />
+      <ClanProvider>
+        <Layout />
+      </ClanProvider>
     </AuthProvider>
   )
 }
